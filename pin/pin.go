@@ -41,7 +41,7 @@ func NewPin(client *gogithub.Client, ignoreOwners, ignoreRepos []string, strictP
 		}
 	}
 
-	resolver := pin.NewVersionResolverWithFallback(client.Repositories, fallbackClient.Repositories)
+	resolver = pin.NewVersionResolverWithFallback(client.Repositories, fallbackClient.Repositories)
 	return Pin{
 		resolver:            &resolver,
 		ignoreOwners:        ignoreOwners,

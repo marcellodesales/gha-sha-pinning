@@ -2,6 +2,7 @@ package pin
 
 import (
 	"context"
+    "net/http"
 	"testing"
 
 	"github.com/Masterminds/semver/v3"
@@ -393,3 +394,65 @@ func createTag(name, sha string) *gogithub.RepositoryTag {
 		},
 	}
 }
+
+func TestVersionResolver_FallbackOn404_ListTags(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	primary := NewMockRepositoryService(ctrl)
+	fallback := NewMockRepositoryService(ctrl)
+
+	// Primary returns 404
+	primary.EXPECT().
+		ListTags(gomock.Any(), "dependabot", "fetch-metadata", gomock.Any()).
+		Return(nil, &gogithub.Response{Response: &http.Response{StatusCode: http.StatusNotFound}}, &gogithub.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotFound},
+		})
+
+	// Fallback returns tags
+	tags := []*gogithub.RepositoryTag{
+		createTag("v2.3.0", "sha1"),
+	}
+	fallback.EXPECT().
+		ListTags(gomock.Any(), "dependabot", "fetch-metadata", gomock.Any()).
+		Return(tags, &gogithub.Response{NextPage: 0}, nil)
+
+	resolver := NewVersionResolverWithFallback(primary, fallback)
+	got, err := resolver.ResolveVersion(context.Background(), ActionDef{
+		Owner:    "dependabot",
+		Repo:     "fetch-metadata",
+		RefOrSHA: "v2.3.0",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "sha1", got.CommitSHA)
+	require.Equal(t, "v2.3.0", got.RefComment)
+}
+
+func TestVersionResolver_FallbackOn404_GetCommitSHA1(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	primary := NewMockRepositoryService(ctrl)
+	fallback := NewMockRepositoryService(ctrl)
+
+	primary.EXPECT().
+		GetCommitSHA1(gomock.Any(), "dependabot", "fetch-metadata", "main", "").
+		Return("", &gogithub.Response{Response: &http.Response{StatusCode: http.StatusNotFound}}, &gogithub.ErrorResponse{
+			Response: &http.Response{StatusCode: http.StatusNotFound},
+		})
+
+	fallback.EXPECT().
+		GetCommitSHA1(gomock.Any(), "dependabot", "fetch-metadata", "main", "").
+		Return("11bd71901bbe5b1630ceea73d27597364c9af683", &gogithub.Response{}, nil)
+
+	resolver := NewVersionResolverWithFallback(primary, fallback)
+	got, err := resolver.ResolveVersion(context.Background(), ActionDef{
+		Owner:    "dependabot",
+		Repo:     "fetch-metadata",
+		RefOrSHA: "main",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "11bd71901bbe5b1630ceea73d27597364c9af683", got.CommitSHA)
+	require.Equal(t, "main", got.RefComment)
+}
+
