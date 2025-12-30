@@ -3,6 +3,7 @@ package pin
 import (
 	"context"
 	"log/slog"
+    "net/http"
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
@@ -79,14 +80,27 @@ type cacheKey struct {
 }
 
 type VersionResolver struct {
-	repoService RepositoryService
-	cache       map[cacheKey]ResolvedVersion
+	repoService         RepositoryService
+    fallbackRepoService RepositoryService
+	cache               map[cacheKey]ResolvedVersion
 }
 
+// NewVersionResolver creates a resolver using a single RepositoryService (no fallback).
 func NewVersionResolver(repoService RepositoryService) VersionResolver {
 	return VersionResolver{
 		repoService: repoService,
-		cache:       make(map[cacheKey]ResolvedVersion),
+        fallbackRepoService: nil,
+		cache: make(map[cacheKey]ResolvedVersion),
+	}
+}
+
+// NewVersionResolverWithFallback creates a resolver with a primary RepositoryService and a fallback service.
+// The fallback will be used only when the primary returns a 404 response.
+func NewVersionResolverWithFallback(primary RepositoryService, fallback RepositoryService) VersionResolver {
+	return VersionResolver{
+		repoService:         primary,
+		fallbackRepoService: fallback,
+		cache:               make(map[cacheKey]ResolvedVersion),
 	}
 }
 
@@ -111,8 +125,12 @@ func (r *VersionResolver) ResolveVersion(ctx context.Context, def ActionDef) (Re
 
 	// The ref is not a version tag, so treat it as a branch name.
 	if version == nil {
-		slog.Debug("fetching commit SHA for branch", "owner", def.Owner, "repo", def.Repo, "ref", def.RefOrSHA)
-		sha, _, err := r.repoService.GetCommitSHA1(ctx, def.Owner, def.Repo, def.RefOrSHA, "")
+        slog.Debug("fetching commit SHA for branch", "owner", def.Owner, "repo", def.Repo, "ref", def.RefOrSHA)
+        sha, resp, err := r.repoService.GetCommitSHA1(ctx, def.Owner, def.Repo, def.RefOrSHA, "")
+        if err != nil && r.shouldFallback(resp, err) {
+            slog.Debug("fallback to github.com", "owner", def.Owner, "repo", def.Repo, "ref", def.RefOrSHA)
+            sha, _, err = r.fallbackRepoService.GetCommitSHA1(ctx, def.Owner, def.Repo, def.RefOrSHA, "")
+        }
 		if err != nil {
 			return ResolvedVersion{}, errors.Wrapf(err, "failed to get commit SHA for %s/%s@%s", def.Owner, def.Repo, def.RefOrSHA)
 		}
@@ -170,7 +188,12 @@ func (r *VersionResolver) listTagsAll(ctx context.Context, owner, repo string) (
 
 	for {
 		slog.Debug("fetching tags for version resolution", "owner", owner, "repo", repo, "page", opts.Page)
-		tags, resp, err := r.repoService.ListTags(ctx, owner, repo, opts)
+        tags, resp, err := r.repoService.ListTags(ctx, owner, repo, opts)
+        if err != nil && r.shouldFallback(resp, err) {
+            slog.Debug("fallback to github.com", "owner", owner, "repo", repo, "page", opts.Page)
+            tags, resp, err = r.fallbackRepoService.ListTags(ctx, owner, repo, opts)
+        }
+
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to list tags for %s/%s", owner, repo)
 		}
@@ -189,6 +212,21 @@ func (r *VersionResolver) listTagsAll(ctx context.Context, owner, repo string) (
 	}
 
 	return result, nil
+}
+
+func (r *VersionResolver) shouldFallback(resp *gogithub.Response, err error) bool {
+	if r.fallbackRepoService == nil {
+		return false
+	}
+	if resp != nil && resp.StatusCode == http.StatusNotFound {
+		return true
+	}
+	// go-github commonly returns *github.ErrorResponse for non-2xx.
+	var er *gogithub.ErrorResponse
+	if errors.As(err, &er) && er.Response != nil && er.Response.StatusCode == http.StatusNotFound {
+		return true
+	}
+	return false
 }
 
 var NoTagsFoundError = errors.New("repository has no tags")

@@ -2,6 +2,7 @@ package pin
 
 import (
 	"context"
+    "log/slog"
 	"regexp"
 	"slices"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/cockroachdb/errors"
 	gogithub "github.com/google/go-github/v72/github"
 
+    "github.com/Finatext/gha-fix/internal/githubclient"
 	"github.com/Finatext/gha-fix/internal/pin"
 )
 
@@ -25,6 +27,21 @@ type Pin struct {
 
 func NewPin(client *gogithub.Client, ignoreOwners, ignoreRepos []string, strictPinning202508 bool) Pin {
 	resolver := pin.NewVersionResolver(client.Repositories)
+	// Always create a github.com fallback client. It will only be used when the primary returns 404.
+	fallbackClient, err := githubclient.NewClient("", githubclient.DefaultAPIBaseURL)
+	if err != nil {
+		// Very unlikely (constant URL), but keep behavior safe: no fallback if creation fails.
+		slog.Debug("failed to create github.com fallback client; continuing without fallback", "error", err)
+		res := pin.NewVersionResolver(client.Repositories)
+		return Pin{
+			resolver:            &res,
+			ignoreOwners:        ignoreOwners,
+			ignoreRepos:         ignoreRepos,
+			strictPinning202508: strictPinning202508,
+		}
+	}
+
+	resolver := pin.NewVersionResolverWithFallback(client.Repositories, fallbackClient.Repositories)
 	return Pin{
 		resolver:            &resolver,
 		ignoreOwners:        ignoreOwners,
