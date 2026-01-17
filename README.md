@@ -85,12 +85,9 @@ Notes:
 
 The result may be the following:
 
-```console
-docker compose run gha-fix pin 
-WARN[0000] Found orphan containers ([gha-fix-gha-fix-run-8b1315ef523f gha-fix-gha-fix-run-a216a105a19b gha-fix-gha-fix-run-581b593a75ce]) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up. 
+docker compose run gha-fix pin
 2026-01-17 21:35:22.503 INF file updated path=gha-lint.yml
 2026-01-17 21:35:22.503 INF successfully pinned GitHub Actions to specific commit SHAs changed=1
-```
 
 Then, checking the updated version
 
