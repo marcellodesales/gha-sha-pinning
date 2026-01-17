@@ -14,3 +14,7 @@ services:
         BUILD_DATE: ${BUILD_DATE:-}
     environment:
       - GITHUB_TOKEN
+
+    working_dir: $PWD
+    volumes:
+      - $PWD:$PWD
