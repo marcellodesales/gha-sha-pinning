@@ -290,7 +290,7 @@ jobs:
 
       - name: Comment PR with build metadata (merge)
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           IMAGE: ${{ steps.merge_digest.outputs.image_base }}
           DIGEST: ${{ steps.merge_digest.outputs.digest }}
