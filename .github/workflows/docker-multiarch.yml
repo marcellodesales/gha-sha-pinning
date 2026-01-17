@@ -19,6 +19,7 @@ env:
   REGISTRY: ghcr.io
   TARGET_SERVICE: gha-fix
   PLATFORMS: linux/amd64,linux/arm64
+  DOCKER_COMPOSE_FILE_NAME: docker-compose.yaml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -73,7 +74,7 @@ jobs:
         uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5.13.0
         with:
           files: |
-            ./docker-compose.yaml
+            ${{ env.DOCKER_COMPOSE_FILE_NAME }}
           targets: ${{ env.TARGET_SERVICE }}
           push: true
           set: |
@@ -240,7 +241,7 @@ jobs:
         uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5.13.0
         with:
           files: |
-            ./docker-compose.yml
+            ${{ env.DOCKER_COMPOSE_FILE_NAME }}
           targets: ${{ env.TARGET_SERVICE }}
           push: true
           set: |
@@ -378,7 +379,7 @@ jobs:
         uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5.13.0
         with:
           files: |
-            ./docker-compose.yml
+            ${{ env.DOCKER_COMPOSE_FILE_NAME }}
           targets: ${{ env.TARGET_SERVICE }}
           push: true
           set: |
