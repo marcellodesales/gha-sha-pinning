@@ -4,12 +4,15 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
   push:
-    branches:
-      - '**'
+    tags:
+      - '*'
 
 permissions:
   contents: read
   packages: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 env:
   REGISTRY: ghcr.io
@@ -49,7 +52,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push (PR)
+      - name: Build (PR)
         uses: docker/bake-action@v5
         with:
           files: |
@@ -61,6 +64,25 @@ jobs:
             ${{ env.TARGET_SERVICE }}.tags=${{ steps.vars.outputs.image_base }}/pr/${{ steps.vars.outputs.pr }}:${{ github.sha }},${{ steps.vars.outputs.image_base }}/pr/${{ steps.vars.outputs.pr }}:${{ steps.vars.outputs.short_sha }}
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
+
+      - name: Resolve image digest (PR)
+        id: pr_digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_BASE="${{ steps.vars.outputs.image_base }}/pr/${{ steps.vars.outputs.pr }}"
+          TAG="$IMAGE_BASE:${{ steps.vars.outputs.short_sha }}"
+          DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{json .Manifest}}' | jq -r '.digest')
+          echo "image_base=$IMAGE_BASE" >> $GITHUB_OUTPUT
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+
+      - name: Attest build provenance (PR)
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ steps.pr_digest.outputs.image_base }}
+          subject-digest: ${{ steps.pr_digest.outputs.digest }}
+          push-to-registry: true
+          show-summary: true
 
   pr-delete:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
@@ -89,19 +111,21 @@ jobs:
           echo "Deleting GHCR package: ${PKG_NAME}"
           gh api -X DELETE "$PATH" -H "Accept: application/vnd.github+json" || echo "Nothing to delete or insufficient permissions."
 
-  release-build:
-    if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+  publish-on-merge:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout merged base branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
 
-      - name: Compute vars
-        id: vars
+      - name: Compute vars (merge)
+        id: merge_vars
         shell: bash
         run: |
           echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-          echo "branch=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.event.pull_request.base.ref }}" >> $GITHUB_OUTPUT
           echo "image_base=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
@@ -117,7 +141,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push (default branch)
+      - name: Build and push (merged to ${{ steps.merge_vars.outputs.branch }})
         uses: docker/bake-action@v5
         with:
           files: |
@@ -126,6 +150,85 @@ jobs:
           push: true
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
-            ${{ env.TARGET_SERVICE }}.tags=${{ steps.vars.outputs.image_base }}:latest,${{ steps.vars.outputs.image_base }}:${{ steps.vars.outputs.branch }},${{ steps.vars.outputs.image_base }}:${{ steps.vars.outputs.branch }}-${{ steps.vars.outputs.short_sha }}
+            ${{ env.TARGET_SERVICE }}.tags=${{ steps.merge_vars.outputs.image_base }}:${{ steps.merge_vars.outputs.branch }},${{ steps.merge_vars.outputs.image_base }}:${{ steps.merge_vars.outputs.branch }}-${{ steps.merge_vars.outputs.short_sha }}
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
+
+      - name: Resolve image digest (merge)
+        id: merge_digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_BASE="${{ steps.merge_vars.outputs.image_base }}"
+          TAG="$IMAGE_BASE:${{ steps.merge_vars.outputs.branch }}"
+          DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{json .Manifest}}' | jq -r '.digest')
+          echo "image_base=$IMAGE_BASE" >> $GITHUB_OUTPUT
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+
+      - name: Attest build provenance (merge)
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ steps.merge_digest.outputs.image_base }}
+          subject-digest: ${{ steps.merge_digest.outputs.digest }}
+          push-to-registry: true
+          show-summary: true
+
+  release-build:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute vars
+        id: vars
+        shell: bash
+        run: |
+          echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          echo "image_base=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (tag ${{ steps.vars.outputs.tag }})
+        uses: docker/bake-action@v5
+        with:
+          files: |
+            ./docker-compose.yml
+          targets: ${{ env.TARGET_SERVICE }}
+          push: true
+          set: |
+            ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
+            ${{ env.TARGET_SERVICE }}.tags=${{ steps.vars.outputs.image_base }}:latest,${{ steps.vars.outputs.image_base }}:${{ steps.vars.outputs.tag }},${{ steps.vars.outputs.image_base }}:${{ steps.vars.outputs.tag }}-${{ steps.vars.outputs.short_sha }}
+            ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
+            ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
+
+      - name: Resolve image digest (tag)
+        id: tag_digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_BASE="${{ steps.vars.outputs.image_base }}"
+          TAG="$IMAGE_BASE:${{ steps.vars.outputs.tag }}"
+          DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{json .Manifest}}' | jq -r '.digest')
+          echo "image_base=$IMAGE_BASE" >> $GITHUB_OUTPUT
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+
+      - name: Attest build provenance (tag)
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ steps.tag_digest.outputs.image_base }}
+          subject-digest: ${{ steps.tag_digest.outputs.digest }}
+          push-to-registry: true
+          show-summary: true
