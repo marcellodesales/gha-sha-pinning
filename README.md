@@ -42,6 +42,13 @@ Option A — switch to the docker-container Buildx driver (recommended):
 ./scripts/docker-buildx-setup.sh
 ```
 
+If you see a permission error, make the script executable first:
+
+```bash
+chmod +x scripts/docker-buildx-setup.sh
+./scripts/docker-buildx-setup.sh
+```
+
 Option B — use Docker Desktop’s containerd image store (UI): Settings → General → Enable "Use containerd image store".
 
 ### 2) Build the image for multiple platforms
