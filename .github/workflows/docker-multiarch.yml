@@ -189,6 +189,7 @@ jobs:
           gh api -X DELETE "$PATH" -H "Accept: application/vnd.github+json" || echo "Nothing to delete or insufficient permissions."
 
   publish-on-merge:
+    timeout-minutes: 5
     if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
