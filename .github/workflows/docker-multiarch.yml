@@ -26,6 +26,7 @@ concurrency:
 
 jobs:
   pr-build:
+    timeout-minutes: 5
     if: github.event_name == 'pull_request' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
