@@ -6,6 +6,7 @@ gha-fix automates security and maintenance fixes in GitHub Actions workflows. It
 
 - **Pin GitHub Actions**: Converts version references to specific commit SHAs for improved security
 - **Add Timeouts**: Adds `timeout-minutes` to GitHub Actions jobs to prevent workflows from running for too long
+- **Docker Compose (multi-arch) build and local testing**: Build multi-platform images and run `gha-fix` locally against the current directory using Docker Compose.
 
 # Installation
 
@@ -28,6 +29,78 @@ gha-fix pin [file1 file2 ...] [flags]
 ```
 
 If no files are specified, all workflow files (.yml or .yaml) in the current directory and subdirectories will be processed.
+
+## Build and test with Docker Compose (multi-arch)
+
+The provided `compose.yaml` builds for multiple platforms (`linux/amd64`, `linux/arm64`) and lets you run `gha-fix` locally against your current directory.
+
+### 1) Enable multi-platform builds
+
+Option A — switch to the docker-container Buildx driver (recommended):
+
+```bash
+./scripts/docker-buildx-setup.sh
+```
+
+Option B — use Docker Desktop’s containerd image store (UI): Settings → General → Enable "Use containerd image store".
+
+### 2) Build the image for multiple platforms
+
+```bash
+# Ensure the builder created above is used for this shell
+export BUILDX_BUILDER=cross-builder
+
+# Build (compose.yaml already sets platforms: linux/amd64,linux/arm64)
+docker compose build --pull
+```
+
+### 3) Run gha-fix locally against the current directory
+
+`compose.yaml` mounts your `$PWD` into the container and sets it as the working directory. Provide `GITHUB_TOKEN` if your operation calls the GitHub API.
+
+```bash
+export GITHUB_TOKEN=...  # required for operations that query the GitHub API
+export BUILDX_BUILDER=cross-builder
+
+# See help
+docker compose run --rm gha-fix --help
+
+# Example: pin actions in all workflow files under the current repo
+docker compose run --rm gha-fix pin
+
+# Example: add timeouts everywhere (default 5 minutes)
+docker compose run --rm gha-fix timeout
+```
+
+Notes:
+- You can pass any `gha-fix` flags after the service name in `docker compose run`.
+- To clean up the container after a run, we use `--rm`.
+
+The result may be the following:
+
+```console
+docker compose run gha-fix pin 
+WARN[0000] Found orphan containers ([gha-fix-gha-fix-run-8b1315ef523f gha-fix-gha-fix-run-a216a105a19b gha-fix-gha-fix-run-581b593a75ce]) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up. 
+2026-01-17 21:35:22.503 INF file updated path=gha-lint.yml
+2026-01-17 21:35:22.503 INF successfully pinned GitHub Actions to specific commit SHAs changed=1
+```
+
+Then, checking the updated version
+
+```console
+git --no-pager diff gha-lint.yml
+diff --git a/.github/workflows/gha-lint.yml b/.github/workflows/gha-lint.yml
+index 376a260..cfd1012 100644
+--- a/.github/workflows/gha-lint.yml
++++ b/.github/workflows/gha-lint.yml
+@@ -14,5 +14,5 @@ jobs:
+     permissions:
+       contents: write
+       pull-requests: write
+-    uses: Finatext/workflows-public/.github/workflows/gha-lint.yml@main
++    uses: Finatext/workflows-public/.github/workflows/gha-lint.yml@aa0779029b74112dc82b436546da0706a57323ad # main
+     secrets: inherit
+```
 
 # Settings
 
