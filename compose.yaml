@@ -1,6 +1,6 @@
 services:
   gha-fix:
-    image: marcellodesales/gha-sha-versionig
+    image: marcellodesales/gha-sha-versioning
     build:
       context: .
       dockerfile: Dockerfile
