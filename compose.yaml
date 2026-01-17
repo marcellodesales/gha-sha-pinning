@@ -15,6 +15,6 @@ services:
     environment:
       - GITHUB_TOKEN
 
-    working_dir: $PWD
+    working_dir: /workspace
     volumes:
-      - $PWD:$PWD
+      - $PWD:/workspace
