@@ -223,7 +223,7 @@ jobs:
 
       - name: Docker metadata (merge)
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ${{ steps.merge_vars.outputs.image_base }}
           tags: |
