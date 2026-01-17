@@ -89,14 +89,14 @@ jobs:
         with:
           files: |
             ${{ env.DOCKER_COMPOSE_FILE_NAME }}
+            ${{ steps.meta.outputs.bake-file-tags }}
+            ${{ steps.meta.outputs.bake-file-labels }}
           targets: ${{ env.TARGET_SERVICE }}
           push: true
           # (Optional) use the builder created above explicitly.
           builder: ${{ steps.buildx.outputs.name }}
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
-            ${{ env.TARGET_SERVICE }}.tags=${{ steps.meta.outputs.tags }}
-            ${{ env.TARGET_SERVICE }}.labels=${{ steps.meta.outputs.labels }}
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
 
@@ -279,13 +279,13 @@ jobs:
         with:
           files: |
             ${{ env.DOCKER_COMPOSE_FILE_NAME }}
+            ${{ steps.meta.outputs.bake-file-tags }}
+            ${{ steps.meta.outputs.bake-file-labels }}
           targets: ${{ env.TARGET_SERVICE }}
           push: true
           builder: ${{ steps.buildx.outputs.name }}
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
-            ${{ env.TARGET_SERVICE }}.tags=${{ steps.meta.outputs.tags }}
-            ${{ env.TARGET_SERVICE }}.labels=${{ steps.meta.outputs.labels }}
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
 
@@ -436,13 +436,13 @@ jobs:
         with:
           files: |
             ${{ env.DOCKER_COMPOSE_FILE_NAME }}
+            ${{ steps.meta.outputs.bake-file-tags }}
+            ${{ steps.meta.outputs.bake-file-labels }}
           targets: ${{ env.TARGET_SERVICE }}
           push: true
           builder: ${{ steps.buildx.outputs.name }}
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
-            ${{ env.TARGET_SERVICE }}.tags=${{ steps.meta.outputs.tags }}
-            ${{ env.TARGET_SERVICE }}.labels=${{ steps.meta.outputs.labels }}
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
 
