@@ -17,7 +17,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  TARGET_SERVICE: cli
+  TARGET_SERVICE: gha-fix
   PLATFORMS: linux/amd64,linux/arm64
 
 concurrency:
