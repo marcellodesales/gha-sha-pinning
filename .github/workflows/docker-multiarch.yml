@@ -13,6 +13,7 @@ permissions:
   id-token: write
   attestations: write
   artifact-metadata: write
+  pull-requests: write
 
 env:
   REGISTRY: ghcr.io
@@ -52,6 +53,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Docker metadata (PR)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.vars.outputs.image_base }}/pr/${{ steps.vars.outputs.pr }}
+          tags: |
+            type=raw,value=${{ github.sha }}
+            type=raw,value=${{ steps.vars.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.title=${{ github.event.repository.name }}
+            org.opencontainers.image.description=PR build for #${{ steps.vars.outputs.pr }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          flavor: latest=false
+
       - name: Build (PR)
         uses: docker/bake-action@v5
         with:
@@ -61,7 +77,8 @@ jobs:
           push: true
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
-            ${{ env.TARGET_SERVICE }}.tags=${{ steps.vars.outputs.image_base }}/pr/${{ steps.vars.outputs.pr }}:${{ github.sha }},${{ steps.vars.outputs.image_base }}/pr/${{ steps.vars.outputs.pr }}:${{ steps.vars.outputs.short_sha }}
+            ${{ env.TARGET_SERVICE }}.tags=${{ steps.meta.outputs.tags }}
+            ${{ env.TARGET_SERVICE }}.labels=${{ steps.meta.outputs.labels }}
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
 
@@ -83,6 +100,66 @@ jobs:
           subject-digest: ${{ steps.pr_digest.outputs.digest }}
           push-to-registry: true
           show-summary: true
+
+      - name: Summarize build metadata (PR)
+        shell: bash
+        run: |
+          {
+            echo "### Docker image metadata (PR #${{ steps.vars.outputs.pr }})";
+            echo "";
+            echo "- Image: ${{ steps.pr_digest.outputs.image_base }}";
+            echo "- Digest: ${{ steps.pr_digest.outputs.digest }}";
+            echo "";
+            echo "Tags:";
+            echo '```';
+            echo "${{ steps.meta.outputs.tags }}";
+            echo '```';
+            echo "Labels:";
+            echo '```';
+            echo "${{ steps.meta.outputs.labels }}";
+            echo '```';
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment PR with build metadata
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          IMAGE: ${{ steps.pr_digest.outputs.image_base }}
+          DIGEST: ${{ steps.pr_digest.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          LABELS: ${{ steps.meta.outputs.labels }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const issue_number = Number(process.env.PR_NUMBER);
+            const marker = '<!-- docker-meta -->';
+            const body = `${marker}
+            ## Docker image metadata
+            - Image: ${process.env.IMAGE}
+            - Digest: ${process.env.DIGEST}
+
+            <details><summary>Tags</summary>
+
+            \`\`\`
+            ${process.env.TAGS}
+            \`\`\`
+            </details>
+
+            <details><summary>Labels</summary>
+
+            \`\`\`
+            ${process.env.LABELS}
+            \`\`\`
+            </details>
+            `;
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
+            const previous = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (previous) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: previous.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
 
   pr-delete:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
@@ -141,6 +218,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Docker metadata (merge)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.merge_vars.outputs.image_base }}
+          tags: |
+            type=raw,value=${{ steps.merge_vars.outputs.branch }}
+            type=raw,value=${{ steps.merge_vars.outputs.branch }}-${{ steps.merge_vars.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.title=${{ github.event.repository.name }}
+            org.opencontainers.image.description=Publish on merge to ${{ steps.merge_vars.outputs.branch }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          flavor: latest=false
+
       - name: Build and push (merged to ${{ steps.merge_vars.outputs.branch }})
         uses: docker/bake-action@v5
         with:
@@ -150,7 +242,8 @@ jobs:
           push: true
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
-            ${{ env.TARGET_SERVICE }}.tags=${{ steps.merge_vars.outputs.image_base }}:${{ steps.merge_vars.outputs.branch }},${{ steps.merge_vars.outputs.image_base }}:${{ steps.merge_vars.outputs.branch }}-${{ steps.merge_vars.outputs.short_sha }}
+            ${{ env.TARGET_SERVICE }}.tags=${{ steps.meta.outputs.tags }}
+            ${{ env.TARGET_SERVICE }}.labels=${{ steps.meta.outputs.labels }}
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
 
@@ -172,6 +265,66 @@ jobs:
           subject-digest: ${{ steps.merge_digest.outputs.digest }}
           push-to-registry: true
           show-summary: true
+
+      - name: Summarize build metadata (merge)
+        shell: bash
+        run: |
+          {
+            echo "### Docker image metadata (merge to ${{ steps.merge_vars.outputs.branch }})";
+            echo "";
+            echo "- Image: ${{ steps.merge_digest.outputs.image_base }}";
+            echo "- Digest: ${{ steps.merge_digest.outputs.digest }}";
+            echo "";
+            echo "Tags:";
+            echo '```';
+            echo "${{ steps.meta.outputs.tags }}";
+            echo '```';
+            echo "Labels:";
+            echo '```';
+            echo "${{ steps.meta.outputs.labels }}";
+            echo '```';
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment PR with build metadata (merge)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          IMAGE: ${{ steps.merge_digest.outputs.image_base }}
+          DIGEST: ${{ steps.merge_digest.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          LABELS: ${{ steps.meta.outputs.labels }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const issue_number = Number(process.env.PR_NUMBER);
+            const marker = '<!-- docker-meta -->';
+            const body = `${marker}
+            ## Docker image metadata (merge)
+            - Image: ${process.env.IMAGE}
+            - Digest: ${process.env.DIGEST}
+
+            <details><summary>Tags</summary>
+
+            \`\`\`
+            ${process.env.TAGS}
+            \`\`\`
+            </details>
+
+            <details><summary>Labels</summary>
+
+            \`\`\`
+            ${process.env.LABELS}
+            \`\`\`
+            </details>
+            `;
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
+            const previous = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (previous) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: previous.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
 
   release-build:
     if: github.event_name == 'push' && github.ref_type == 'tag'
@@ -201,6 +354,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Docker metadata (tag)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.vars.outputs.image_base }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.vars.outputs.tag }}
+            type=raw,value=${{ steps.vars.outputs.tag }}-${{ steps.vars.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.title=${{ github.event.repository.name }}
+            org.opencontainers.image.description=Release build for tag ${{ steps.vars.outputs.tag }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          flavor: latest=false
+
       - name: Build and push (tag ${{ steps.vars.outputs.tag }})
         uses: docker/bake-action@v5
         with:
@@ -210,7 +379,8 @@ jobs:
           push: true
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
-            ${{ env.TARGET_SERVICE }}.tags=${{ steps.vars.outputs.image_base }}:latest,${{ steps.vars.outputs.image_base }}:${{ steps.vars.outputs.tag }},${{ steps.vars.outputs.image_base }}:${{ steps.vars.outputs.tag }}-${{ steps.vars.outputs.short_sha }}
+            ${{ env.TARGET_SERVICE }}.tags=${{ steps.meta.outputs.tags }}
+            ${{ env.TARGET_SERVICE }}.labels=${{ steps.meta.outputs.labels }}
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
 
@@ -232,3 +402,22 @@ jobs:
           subject-digest: ${{ steps.tag_digest.outputs.digest }}
           push-to-registry: true
           show-summary: true
+
+      - name: Summarize build metadata (tag)
+        shell: bash
+        run: |
+          {
+            echo "### Docker image metadata (tag ${{ steps.vars.outputs.tag }})";
+            echo "";
+            echo "- Image: ${{ steps.tag_digest.outputs.image_base }}";
+            echo "- Digest: ${{ steps.tag_digest.outputs.digest }}";
+            echo "";
+            echo "Tags:";
+            echo '```';
+            echo "${{ steps.meta.outputs.tags }}";
+            echo '```';
+            echo "Labels:";
+            echo '```';
+            echo "${{ steps.meta.outputs.labels }}";
+            echo '```';
+          } >> "$GITHUB_STEP_SUMMARY"
