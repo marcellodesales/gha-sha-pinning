@@ -123,7 +123,7 @@ jobs:
       # GitHub-native SBOM attestation + nice step summary.
       # NOTE: pin this action to a commit SHA in your repo like you did for provenance (recommended).
       - name: Attest SBOM (PR)
-        uses: actions/attest-sbom@v1
+        uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1.4.1
         with:
           subject-name: ${{ steps.pr_digest.outputs.image_base }}
           subject-digest: ${{ steps.pr_digest.outputs.digest }}
@@ -309,7 +309,7 @@ jobs:
           show-summary: true
 
       - name: Attest SBOM (merge)
-        uses: actions/attest-sbom@v1
+        uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1.4.1
         with:
           subject-name: ${{ steps.merge_digest.outputs.image_base }}
           subject-digest: ${{ steps.merge_digest.outputs.digest }}
@@ -466,7 +466,7 @@ jobs:
           show-summary: true
 
       - name: Attest SBOM (tag)
-        uses: actions/attest-sbom@v1
+        uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1.4.1
         with:
           subject-name: ${{ steps.tag_digest.outputs.image_base }}
           subject-digest: ${{ steps.tag_digest.outputs.digest }}
