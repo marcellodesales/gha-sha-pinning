@@ -10,7 +10,8 @@ on:
     paths:
       - '.github/**'
 jobs:
-  call-gha-lint:
+  gha-sha-pinning:
+    name: 📌 gha-sha-pinning
     permissions:
       contents: write
       pull-requests: write
