@@ -112,6 +112,7 @@ jobs:
           flavor: latest=false
 
       - name: Build (PR) -> push only PR+SHA tags (no latest)
+        id: bake_pr
         uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5.13.0
         with:
           files: |
@@ -130,21 +131,15 @@ jobs:
       - name: Resolve image digest (PR)
         id: pr_digest
         shell: bash
+        env:
+          TARGET_SERVICE: ${{ env.TARGET_SERVICE }}
         run: |
           set -euo pipefail
+          META_FILE="${{ steps.bake_pr.outputs.metadata }}"
           IMAGE_BASE="${{ steps.vars.outputs.ghcr_image_base }}/pr/${{ steps.vars.outputs.pr }}"
-          TAG="$IMAGE_BASE:${{ steps.vars.outputs.short_sha }}"
-          DIGEST=""
-          for i in $(seq 1 10); do
-            if DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{.Digest}}' 2>/dev/null | tr -d '\r'); then
-              if [ -n "$DIGEST" ]; then break; fi
-            fi
-            echo "Attempt $i: tag not available yet, sleeping..."
-            sleep 3
-          done
+          DIGEST=$(jq -r --arg t "$TARGET_SERVICE" '.target[$t].digest // empty' "$META_FILE")
           if [ -z "$DIGEST" ]; then
-            echo "::error::${TAG}: not found"
-            exit 1
+            echo "::error::Digest not found in bake metadata"; exit 1
           fi
           echo "image_base=$IMAGE_BASE" >> "$GITHUB_OUTPUT"
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
@@ -328,6 +323,7 @@ jobs:
 
       # IMPORTANT: Push ONLY branch-shortsha (no branch / no latest)
       - name: Build and push (merge) -> push only branch-shortsha
+        id: bake_merge
         uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5.13.0
         with:
           files: |
@@ -345,14 +341,15 @@ jobs:
       - name: Resolve image digest (merge)
         id: merge_digest
         shell: bash
+        env:
+          TARGET_SERVICE: ${{ env.TARGET_SERVICE }}
         run: |
           set -euo pipefail
+          META_FILE="${{ steps.bake_merge.outputs.metadata }}"
           IMAGE_BASE="${{ steps.merge_vars.outputs.ghcr_image_base }}"
-          TAG="$IMAGE_BASE:${{ steps.merge_vars.outputs.branch }}-${{ steps.merge_vars.outputs.short_sha }}"
-          DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{.Digest}}' | tr -d '\r')
+          DIGEST=$(jq -r --arg t "$TARGET_SERVICE" '.target[$t].digest // empty' "$META_FILE")
           if [ -z "$DIGEST" ]; then
-            echo "::error::${TAG}: not found"
-            exit 1
+            echo "::error::Digest not found in bake metadata"; exit 1
           fi
           echo "image_base=$IMAGE_BASE" >> "$GITHUB_OUTPUT"
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
@@ -506,6 +503,7 @@ jobs:
 
       # IMPORTANT: Push only tag and tag-shortsha (do not push latest unless explicitly desired)
       - name: Build and push (tag) -> push tag and tag-shortsha
+        id: bake_tag
         uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5.13.0
         with:
           files: |
@@ -524,14 +522,15 @@ jobs:
       - name: Resolve image digest (tag)
         id: tag_digest
         shell: bash
+        env:
+          TARGET_SERVICE: ${{ env.TARGET_SERVICE }}
         run: |
           set -euo pipefail
+          META_FILE="${{ steps.bake_tag.outputs.metadata }}"
           IMAGE_BASE="${{ steps.vars.outputs.ghcr_image_base }}"
-          TAG="$IMAGE_BASE:${{ steps.vars.outputs.tag }}"
-          DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{.Digest}}' | tr -d '\r')
+          DIGEST=$(jq -r --arg t "$TARGET_SERVICE" '.target[$t].digest // empty' "$META_FILE")
           if [ -z "$DIGEST" ]; then
-            echo "::error::${TAG}: not found"
-            exit 1
+            echo "::error::Digest not found in bake metadata"; exit 1
           fi
           echo "image_base=$IMAGE_BASE" >> "$GITHUB_OUTPUT"
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
