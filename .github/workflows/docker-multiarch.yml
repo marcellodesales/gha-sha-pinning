@@ -165,7 +165,7 @@ jobs:
         with:
           subject-name: ${{ steps.pr_digest.outputs.image_base }}
           subject-digest: ${{ steps.pr_digest.outputs.digest }}
-          predicate-path: sbom-pr.spdx.json
+          sbom-path: sbom-pr.spdx.json
           push-to-registry: true
           show-summary: true
 
@@ -383,7 +383,7 @@ jobs:
         with:
           subject-name: ${{ steps.merge_digest.outputs.image_base }}
           subject-digest: ${{ steps.merge_digest.outputs.digest }}
-          predicate-path: sbom-merge.spdx.json
+          sbom-path: sbom-merge.spdx.json
           push-to-registry: true
           show-summary: true
 
@@ -572,7 +572,7 @@ jobs:
         with:
           subject-name: ${{ steps.tag_digest.outputs.image_base }}
           subject-digest: ${{ steps.tag_digest.outputs.digest }}
-          predicate-path: sbom-tag.spdx.json
+          sbom-path: sbom-tag.spdx.json
           push-to-registry: true
           show-summary: true
 
