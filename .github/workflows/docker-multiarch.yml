@@ -21,7 +21,7 @@ env:
   TARGET_SERVICE: gha-fix
   PLATFORMS: linux/amd64,linux/arm64
   # IMPORTANT: This must match the actual file in your repo AND be consistent across all jobs.
-  # If your repo uses docker-compose.yml, change this to docker-compose.yml.
+  # If your repo uses docker-compose.yml, change this to docker-compose.yml
   DOCKER_COMPOSE_FILE_NAME: docker-compose.yaml
 
   # Optional Docker Hub settings (only used on tag builds AND only if DOCKER_REGISTRY_TOKEN is set)
