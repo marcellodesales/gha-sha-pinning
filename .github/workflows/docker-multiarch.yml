@@ -136,8 +136,8 @@ jobs:
           TAG="$IMAGE_BASE:${{ steps.vars.outputs.short_sha }}"
           DIGEST=""
           for i in $(seq 1 10); do
-            if DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{.Manifest.Digest}}' 2>/dev/null); then
-              break
+            if DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{.Digest}}' 2>/dev/null | tr -d '\r'); then
+              if [ -n "$DIGEST" ]; then break; fi
             fi
             echo "Attempt $i: tag not available yet, sleeping..."
             sleep 3
@@ -146,8 +146,8 @@ jobs:
             echo "::error::${TAG}: not found"
             exit 1
           fi
-          echo "image_base=$IMAGE_BASE" >> $GITHUB_OUTPUT
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+          echo "image_base=$IMAGE_BASE" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Attest build provenance (PR)
         uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
@@ -349,9 +349,13 @@ jobs:
           set -euo pipefail
           IMAGE_BASE="${{ steps.merge_vars.outputs.ghcr_image_base }}"
           TAG="$IMAGE_BASE:${{ steps.merge_vars.outputs.branch }}-${{ steps.merge_vars.outputs.short_sha }}"
-          DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{.Manifest.Digest}}')
-          echo "image_base=$IMAGE_BASE" >> $GITHUB_OUTPUT
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+          DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{.Digest}}' | tr -d '\r')
+          if [ -z "$DIGEST" ]; then
+            echo "::error::${TAG}: not found"
+            exit 1
+          fi
+          echo "image_base=$IMAGE_BASE" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Attest build provenance (merge)
         uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
@@ -524,9 +528,13 @@ jobs:
           set -euo pipefail
           IMAGE_BASE="${{ steps.vars.outputs.ghcr_image_base }}"
           TAG="$IMAGE_BASE:${{ steps.vars.outputs.tag }}"
-          DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{.Manifest.Digest}}')
-          echo "image_base=$IMAGE_BASE" >> $GITHUB_OUTPUT
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+          DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{.Digest}}' | tr -d '\r')
+          if [ -z "$DIGEST" ]; then
+            echo "::error::${TAG}: not found"
+            exit 1
+          fi
+          echo "image_base=$IMAGE_BASE" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
       - name: Attest build provenance (tag)
         uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
