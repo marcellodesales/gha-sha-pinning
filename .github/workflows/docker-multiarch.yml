@@ -28,6 +28,12 @@ env:
   DOCKERHUB_REGISTRY: docker.io
   DOCKERHUB_NAMESPACE: ${{ github.repository_owner }}
 
+  # Set to true only if your org/repo has artifact-metadata enabled and you want attestations pushed to the registry
+  # The artifact-metadata APIs (used when pushing attestations to the registry) are only available if your org/account has the Artifact Attestations feature enabled. For personal orgs it’s generally not on by default, and there’s no self-serve toggle. If you don’t have it enabled, GitHub returns 404 and you’ll see the storage-record warning.
+  # What to do: Keep PUSH_ATTESTATIONS: "false" (as in the current workflow). You’ll still build, push images, and generate SBOMs; you just won’t push attestations to GHCR.
+  # If/when you get the feature enabled (GitHub Enterprise Cloud / allowlisted), set PUSH_ATTESTATIONS: "true" to start pushing attestations. No other changes needed.
+  PUSH_ATTESTATIONS: "false"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -89,8 +95,6 @@ jobs:
           ghcr = os.environ["GHCR_IMAGE_BASE"]
           with open(path, "r", encoding="utf-8") as f:
             s = f.read()
-          # Replace lines like: image: something
-          # with: image: ghcr.io/owner/repo
           s2, n = re.subn(r'(?m)^(?P<indent>\s*)image:\s*.+$', r'\g<indent>image: ' + ghcr, s)
           if n == 0:
             print(f"::warning::No 'image:' fields found in {path}. If your compose file sets image elsewhere, Bake may still push to Docker Hub.")
@@ -149,10 +153,9 @@ jobs:
         with:
           subject-name: ${{ steps.pr_digest.outputs.image_base }}
           subject-digest: ${{ steps.pr_digest.outputs.digest }}
-          push-to-registry: true
+          push-to-registry: ${{ env.PUSH_ATTESTATIONS }}
           show-summary: true
 
-      # Generate SBOM file explicitly (avoids ENOENT in attest-sbom)
       - name: Generate SBOM (PR)
         id: sbom_pr
         uses: anchore/sbom-action@v0.17.3
@@ -166,7 +169,7 @@ jobs:
           subject-name: ${{ steps.pr_digest.outputs.image_base }}
           subject-digest: ${{ steps.pr_digest.outputs.digest }}
           sbom-path: sbom-pr.spdx.json
-          push-to-registry: true
+          push-to-registry: ${{ env.PUSH_ATTESTATIONS }}
           show-summary: true
 
       - name: Summarize build metadata (PR)
@@ -368,7 +371,7 @@ jobs:
         with:
           subject-name: ${{ steps.merge_digest.outputs.image_base }}
           subject-digest: ${{ steps.merge_digest.outputs.digest }}
-          push-to-registry: true
+          push-to-registry: ${{ env.PUSH_ATTESTATIONS }}
           show-summary: true
 
       - name: Generate SBOM (merge)
@@ -384,7 +387,7 @@ jobs:
           subject-name: ${{ steps.merge_digest.outputs.image_base }}
           subject-digest: ${{ steps.merge_digest.outputs.digest }}
           sbom-path: sbom-merge.spdx.json
-          push-to-registry: true
+          push-to-registry: ${{ env.PUSH_ATTESTATIONS }}
           show-summary: true
 
       - name: Summarize build metadata (merge)
@@ -557,7 +560,7 @@ jobs:
         with:
           subject-name: ${{ steps.tag_digest.outputs.image_base }}
           subject-digest: ${{ steps.tag_digest.outputs.digest }}
-          push-to-registry: true
+          push-to-registry: ${{ env.PUSH_ATTESTATIONS }}
           show-summary: true
 
       - name: Generate SBOM (tag)
@@ -573,7 +576,7 @@ jobs:
           subject-name: ${{ steps.tag_digest.outputs.image_base }}
           subject-digest: ${{ steps.tag_digest.outputs.digest }}
           sbom-path: sbom-tag.spdx.json
-          push-to-registry: true
+          push-to-registry: ${{ env.PUSH_ATTESTATIONS }}
           show-summary: true
 
       - name: Summarize build metadata (tag)
