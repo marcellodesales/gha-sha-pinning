@@ -89,6 +89,8 @@ jobs:
           ghcr = os.environ["GHCR_IMAGE_BASE"]
           with open(path, "r", encoding="utf-8") as f:
             s = f.read()
+          # Replace lines like: image: something
+          # with: image: ghcr.io/owner/repo
           s2, n = re.subn(r'(?m)^(?P<indent>\s*)image:\s*.+$', r'\g<indent>image: ' + ghcr, s)
           if n == 0:
             print(f"::warning::No 'image:' fields found in {path}. If your compose file sets image elsewhere, Bake may still push to Docker Hub.")
@@ -120,7 +122,7 @@ jobs:
           builder: ${{ steps.buildx.outputs.name }}
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
-            ${{ env.TARGET_SERVICE }}.tags=${{ steps.vars.outputs.ghcr_image_base }}/pr/${{ steps.vars.outputs.pr }}:${{ steps.vars.outputs.full_sha }},${{ steps.vars.outputs.ghcr_image_base }}/pr/${{ steps.vars.outputs.pr }}:${{ steps.vars.outputs.short_sha }}
+            ${{ env.TARGET_SERVICE }}.tags=["${{ steps.vars.outputs.ghcr_image_base }}/pr/${{ steps.vars.outputs.pr }}:${{ steps.vars.outputs.full_sha }}","${{ steps.vars.outputs.ghcr_image_base }}/pr/${{ steps.vars.outputs.pr }}:${{ steps.vars.outputs.short_sha }}"]
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
 
@@ -335,7 +337,7 @@ jobs:
           builder: ${{ steps.buildx.outputs.name }}
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
-            ${{ env.TARGET_SERVICE }}.tags=${{ steps.merge_vars.outputs.ghcr_image_base }}:${{ steps.merge_vars.outputs.branch }}-${{ steps.merge_vars.outputs.short_sha }}
+            ${{ env.TARGET_SERVICE }}.tags=["${{ steps.merge_vars.outputs.ghcr_image_base }}:${{ steps.merge_vars.outputs.branch }}-${{ steps.merge_vars.outputs.short_sha }}"]
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
 
@@ -385,7 +387,7 @@ jobs:
             echo '```';
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Comment PR with build metadata (merge) — preserved, but TAGS now set to the exact tag we push
+      # Comment PR with build metadata (merge)
       - name: Comment PR with build metadata (merge)
         if: github.event_name == 'pull_request'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
@@ -485,7 +487,6 @@ jobs:
           print(f"Rewrote {n} image field(s) in {path}")
           PY
 
-      # NOTE: Only use metadata-action for labels (avoid multiline tags issues).
       - name: Docker metadata (tag) - labels only
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
@@ -510,7 +511,7 @@ jobs:
           builder: ${{ steps.buildx.outputs.name }}
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
-            ${{ env.TARGET_SERVICE }}.tags=${{ steps.vars.outputs.ghcr_image_base }}:${{ steps.vars.outputs.tag }},${{ steps.vars.outputs.ghcr_image_base }}:${{ steps.vars.outputs.tag }}-${{ steps.vars.outputs.short_sha }}
+            ${{ env.TARGET_SERVICE }}.tags=["${{ steps.vars.outputs.ghcr_image_base }}:${{ steps.vars.outputs.tag }}","${{ steps.vars.outputs.ghcr_image_base }}:${{ steps.vars.outputs.tag }}-${{ steps.vars.outputs.short_sha }}"]
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
 
@@ -599,6 +600,9 @@ jobs:
           SHORT_SHA: ${{ steps.vars.outputs.short_sha }}
         run: |
           set -euo pipefail
+
+          # Copy the manifest list by digest from GHCR -> Docker Hub.
+          # Requires buildx imagetools (provided by setup-buildx-action).
           SRC="${GHCR_IMAGE}@${DIGEST}"
 
           echo "Copying ${SRC} -> docker.io/${DOCKERHUB_REPO}:${TAG}"
@@ -608,3 +612,8 @@ jobs:
             "${SRC}"
 
           echo "Docker Hub publish complete."
+
+          echo "### Docker Hub publish" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source: ${SRC}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Published: docker.io/${DOCKERHUB_REPO}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Published: docker.io/${DOCKERHUB_REPO}:${TAG}-${SHORT_SHA}" >> "$GITHUB_STEP_SUMMARY"
