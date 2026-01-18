@@ -16,12 +16,17 @@ permissions:
   pull-requests: write
 
 env:
+  # Default registry for ALL builds
   REGISTRY: ghcr.io
   TARGET_SERVICE: gha-fix
   PLATFORMS: linux/amd64,linux/arm64
   # IMPORTANT: This must match the actual file in your repo AND be consistent across all jobs.
   # If your repo uses docker-compose.yml, change this to docker-compose.yml.
   DOCKER_COMPOSE_FILE_NAME: docker-compose.yaml
+
+  # Optional Docker Hub settings (only used on tag builds AND only if DOCKER_REGISTRY_TOKEN is set)
+  DOCKERHUB_REGISTRY: docker.io
+  DOCKERHUB_NAMESPACE: ${{ github.repository_owner }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -36,8 +41,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      # Optional but highly recommended for diagnosing "target not found"/"target.name" style bake failures.
-      # Remove after confirmed stable.
       - name: Verify bake targets from compose file
         shell: bash
         run: |
@@ -53,7 +56,7 @@ jobs:
         run: |
           echo "pr=${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
           echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-          echo "image_base=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          echo "ghcr_image_base=${{ env.REGISTRY }}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
@@ -69,11 +72,39 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Force docker/bake-action to use ONLY GHCR by rewriting compose image references to ghcr.io/owner/repo
+      - name: Rewrite compose images to GHCR only
+        shell: bash
+        env:
+          GHCR_IMAGE_BASE: ${{ steps.vars.outputs.ghcr_image_base }}
+        run: |
+          set -euo pipefail
+          FILE="${{ env.DOCKER_COMPOSE_FILE_NAME }}"
+          echo "Rewriting any 'image:' fields in $FILE to ${GHCR_IMAGE_BASE}"
+          python - <<'PY'
+          import os, re
+          path = os.environ["FILE"] if "FILE" in os.environ else os.environ.get("DOCKER_COMPOSE_FILE_NAME","docker-compose.yaml")
+          ghcr = os.environ["GHCR_IMAGE_BASE"]
+          with open(path, "r", encoding="utf-8") as f:
+            s = f.read()
+
+          # Replace lines like: image: something
+          # with: image: ghcr.io/owner/repo
+          s2, n = re.subn(r'(?m)^(?P<indent>\s*)image:\s*.+$', r'\g<indent>image: ' + ghcr, s)
+          if n == 0:
+            print(f"::warning::No 'image:' fields found in {path}. If your compose file sets image elsewhere, Bake may still push to Docker Hub.")
+          with open(path, "w", encoding="utf-8") as f:
+            f.write(s2)
+          print(f"Rewrote {n} image field(s) in {path}")
+          PY
+        env:
+          FILE: ${{ env.DOCKER_COMPOSE_FILE_NAME }}
+
       - name: Docker metadata (PR)
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ${{ steps.vars.outputs.image_base }}/pr/${{ steps.vars.outputs.pr }}
+          images: ${{ steps.vars.outputs.ghcr_image_base }}/pr/${{ steps.vars.outputs.pr }}
           tags: |
             type=raw,value=${{ github.sha }}
             type=raw,value=${{ steps.vars.outputs.short_sha }}
@@ -84,7 +115,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           flavor: latest=false
 
-      - name: Build (PR)
+      - name: Build (PR) -> push to GHCR only
         uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5.13.0
         with:
           files: |
@@ -93,7 +124,6 @@ jobs:
             ${{ steps.meta.outputs.bake-file-labels }}
           targets: ${{ env.TARGET_SERVICE }}
           push: true
-          # (Optional) use the builder created above explicitly.
           builder: ${{ steps.buildx.outputs.name }}
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
@@ -105,13 +135,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          IMAGE_BASE="${{ steps.vars.outputs.image_base }}/pr/${{ steps.vars.outputs.pr }}"
+          IMAGE_BASE="${{ steps.vars.outputs.ghcr_image_base }}/pr/${{ steps.vars.outputs.pr }}"
           TAG="$IMAGE_BASE:${{ steps.vars.outputs.short_sha }}"
           DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{json .Manifest}}' | jq -r '.digest')
           echo "image_base=$IMAGE_BASE" >> $GITHUB_OUTPUT
           echo "digest=$DIGEST" >> $GITHUB_OUTPUT
 
-      # GitHub-native provenance attestation + nice step summary.
       - name: Attest build provenance (PR)
         uses: actions/attest-build-provenance@00014ed6ed5efc5b1ab7f7f34a39eb55d41aa4f8 # v3.1.0
         with:
@@ -120,8 +149,6 @@ jobs:
           push-to-registry: true
           show-summary: true
 
-      # GitHub-native SBOM attestation + nice step summary.
-      # NOTE: pin this action to a commit SHA in your repo like you did for provenance (recommended).
       - name: Attest SBOM (PR)
         uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1.4.1
         with:
@@ -243,7 +270,7 @@ jobs:
         run: |
           echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
           echo "branch=${{ github.event.pull_request.base.ref }}" >> $GITHUB_OUTPUT
-          echo "image_base=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          echo "ghcr_image_base=${{ env.REGISTRY }}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
@@ -259,11 +286,32 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Rewrite compose images to GHCR only
+        shell: bash
+        env:
+          GHCR_IMAGE_BASE: ${{ steps.merge_vars.outputs.ghcr_image_base }}
+          FILE: ${{ env.DOCKER_COMPOSE_FILE_NAME }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, re
+          path = os.environ["FILE"]
+          ghcr = os.environ["GHCR_IMAGE_BASE"]
+          with open(path, "r", encoding="utf-8") as f:
+            s = f.read()
+          s2, n = re.subn(r'(?m)^(?P<indent>\s*)image:\s*.+$', r'\g<indent>image: ' + ghcr, s)
+          if n == 0:
+            print(f"::warning::No 'image:' fields found in {path}.")
+          with open(path, "w", encoding="utf-8") as f:
+            f.write(s2)
+          print(f"Rewrote {n} image field(s) in {path}")
+          PY
+
       - name: Docker metadata (merge)
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ${{ steps.merge_vars.outputs.image_base }}
+          images: ${{ steps.merge_vars.outputs.ghcr_image_base }}
           tags: |
             type=raw,value=${{ steps.merge_vars.outputs.branch }}
             type=raw,value=${{ steps.merge_vars.outputs.branch }}-${{ steps.merge_vars.outputs.short_sha }}
@@ -274,7 +322,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           flavor: latest=false
 
-      - name: Build and push (merged to ${{ steps.merge_vars.outputs.branch }})
+      - name: Build and push (merge) -> push to GHCR only
         uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5.13.0
         with:
           files: |
@@ -294,7 +342,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          IMAGE_BASE="${{ steps.merge_vars.outputs.image_base }}"
+          IMAGE_BASE="${{ steps.merge_vars.outputs.ghcr_image_base }}"
           TAG="$IMAGE_BASE:${{ steps.merge_vars.outputs.branch }}"
           DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{json .Manifest}}' | jq -r '.digest')
           echo "image_base=$IMAGE_BASE" >> $GITHUB_OUTPUT
@@ -399,7 +447,10 @@ jobs:
         run: |
           echo "short_sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
           echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-          echo "image_base=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          echo "ghcr_image_base=${{ env.REGISTRY }}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+          # Docker Hub repo name (no registry prefix). Example: marcellodesales/gha-sha-pinning
+          echo "dockerhub_repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
@@ -415,11 +466,32 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker metadata (tag)
+      - name: Rewrite compose images to GHCR only
+        shell: bash
+        env:
+          GHCR_IMAGE_BASE: ${{ steps.vars.outputs.ghcr_image_base }}
+          FILE: ${{ env.DOCKER_COMPOSE_FILE_NAME }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, re
+          path = os.environ["FILE"]
+          ghcr = os.environ["GHCR_IMAGE_BASE"]
+          with open(path, "r", encoding="utf-8") as f:
+            s = f.read()
+          s2, n = re.subn(r'(?m)^(?P<indent>\s*)image:\s*.+$', r'\g<indent>image: ' + ghcr, s)
+          if n == 0:
+            print(f"::warning::No 'image:' fields found in {path}.")
+          with open(path, "w", encoding="utf-8") as f:
+            f.write(s2)
+          print(f"Rewrote {n} image field(s) in {path}")
+          PY
+
+      - name: Docker metadata (tag) - GHCR
         id: meta
         uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
-          images: ${{ steps.vars.outputs.image_base }}
+          images: ${{ steps.vars.outputs.ghcr_image_base }}
           tags: |
             type=raw,value=latest
             type=raw,value=${{ steps.vars.outputs.tag }}
@@ -431,7 +503,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           flavor: latest=false
 
-      - name: Build and push (tag ${{ steps.vars.outputs.tag }})
+      - name: Build and push (tag) -> push to GHCR only
         uses: docker/bake-action@4a9a8d494466d37134e2bfca2d3a8de8fb2681ad # v5.13.0
         with:
           files: |
@@ -446,12 +518,12 @@ jobs:
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
 
-      - name: Resolve image digest (tag)
+      - name: Resolve image digest (tag) - GHCR
         id: tag_digest
         shell: bash
         run: |
           set -euo pipefail
-          IMAGE_BASE="${{ steps.vars.outputs.image_base }}"
+          IMAGE_BASE="${{ steps.vars.outputs.ghcr_image_base }}"
           TAG="$IMAGE_BASE:${{ steps.vars.outputs.tag }}"
           DIGEST=$(docker buildx imagetools inspect "$TAG" --format '{{json .Manifest}}' | jq -r '.digest')
           echo "image_base=$IMAGE_BASE" >> $GITHUB_OUTPUT
@@ -491,3 +563,44 @@ jobs:
             echo "${{ steps.meta.outputs.labels }}";
             echo '```';
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Optional: also publish the SAME manifest list to Docker Hub, but only if DOCKER_REGISTRY_TOKEN exists.
+      # This does NOT rebuild: it copies the already-pushed multi-arch manifest from GHCR to Docker Hub.
+      - name: Login to Docker Hub (optional)
+        if: ${{ secrets.DOCKER_REGISTRY_TOKEN != '' }}
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ${{ env.DOCKERHUB_REGISTRY }}
+          username: ${{ secrets.DOCKER_REGISTRY_USERNAME }}
+          password: ${{ secrets.DOCKER_REGISTRY_TOKEN }}
+
+      - name: Publish to Docker Hub (optional, tag builds only)
+        if: ${{ secrets.DOCKER_REGISTRY_TOKEN != '' }}
+        shell: bash
+        env:
+          GHCR_IMAGE: ${{ steps.tag_digest.outputs.image_base }}
+          DIGEST: ${{ steps.tag_digest.outputs.digest }}
+          DOCKERHUB_REPO: ${{ steps.vars.outputs.dockerhub_repo }}
+          TAG: ${{ steps.vars.outputs.tag }}
+          SHORT_SHA: ${{ steps.vars.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+
+          # Copy the manifest list by digest from GHCR -> Docker Hub.
+          # Requires buildx imagetools (provided by setup-buildx-action).
+          SRC="${GHCR_IMAGE}@${DIGEST}"
+
+          echo "Copying ${SRC} -> docker.io/${DOCKERHUB_REPO}:${TAG}"
+          docker buildx imagetools create \
+            -t "docker.io/${DOCKERHUB_REPO}:latest" \
+            -t "docker.io/${DOCKERHUB_REPO}:${TAG}" \
+            -t "docker.io/${DOCKERHUB_REPO}:${TAG}-${SHORT_SHA}" \
+            "${SRC}"
+
+          echo "Docker Hub publish complete."
+
+          echo "### Docker Hub publish" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source: ${SRC}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Published: docker.io/${DOCKERHUB_REPO}:${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Published: docker.io/${DOCKERHUB_REPO}:${TAG}-${SHORT_SHA}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Published: docker.io/${DOCKERHUB_REPO}:latest" >> "$GITHUB_STEP_SUMMARY"
