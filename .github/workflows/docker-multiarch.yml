@@ -152,11 +152,20 @@ jobs:
           push-to-registry: true
           show-summary: true
 
+      # Generate SBOM file explicitly (avoids ENOENT in attest-sbom)
+      - name: Generate SBOM (PR)
+        id: sbom_pr
+        uses: anchore/sbom-action@v0.17.3
+        with:
+          image: ${{ steps.pr_digest.outputs.image_base }}@${{ steps.pr_digest.outputs.digest }}
+          output-file: sbom-pr.spdx.json
+
       - name: Attest SBOM (PR)
         uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1.4.1
         with:
           subject-name: ${{ steps.pr_digest.outputs.image_base }}
           subject-digest: ${{ steps.pr_digest.outputs.digest }}
+          predicate-path: sbom-pr.spdx.json
           push-to-registry: true
           show-summary: true
 
@@ -362,11 +371,19 @@ jobs:
           push-to-registry: true
           show-summary: true
 
+      - name: Generate SBOM (merge)
+        id: sbom_merge
+        uses: anchore/sbom-action@v0.17.3
+        with:
+          image: ${{ steps.merge_digest.outputs.image_base }}@${{ steps.merge_digest.outputs.digest }}
+          output-file: sbom-merge.spdx.json
+
       - name: Attest SBOM (merge)
         uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1.4.1
         with:
           subject-name: ${{ steps.merge_digest.outputs.image_base }}
           subject-digest: ${{ steps.merge_digest.outputs.digest }}
+          predicate-path: sbom-merge.spdx.json
           push-to-registry: true
           show-summary: true
 
@@ -543,11 +560,19 @@ jobs:
           push-to-registry: true
           show-summary: true
 
+      - name: Generate SBOM (tag)
+        id: sbom_tag
+        uses: anchore/sbom-action@v0.17.3
+        with:
+          image: ${{ steps.tag_digest.outputs.image_base }}@${{ steps.tag_digest.outputs.digest }}
+          output-file: sbom-tag.spdx.json
+
       - name: Attest SBOM (tag)
         uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1.4.1
         with:
           subject-name: ${{ steps.tag_digest.outputs.image_base }}
           subject-digest: ${{ steps.tag_digest.outputs.digest }}
+          predicate-path: sbom-tag.spdx.json
           push-to-registry: true
           show-summary: true
 
