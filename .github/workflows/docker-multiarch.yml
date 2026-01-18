@@ -137,7 +137,7 @@ jobs:
           set -euo pipefail
           META_JSON='${{ steps.bake_pr.outputs.metadata }}'
           IMAGE_BASE="${{ steps.vars.outputs.ghcr_image_base }}/pr/${{ steps.vars.outputs.pr }}"
-          DIGEST=$(printf '%s' "$META_JSON" | jq -r --arg t "$TARGET_SERVICE" '.target[$t].digest // empty')
+          DIGEST=$(printf '%s' "$META_JSON" | jq -r --arg t "$TARGET_SERVICE" '.[$t]["containerimage.digest"] // empty')
           if [ -z "$DIGEST" ]; then
             echo "::error::Digest not found in bake metadata"; exit 1
           fi
@@ -347,7 +347,7 @@ jobs:
           set -euo pipefail
           META_JSON='${{ steps.bake_merge.outputs.metadata }}'
           IMAGE_BASE="${{ steps.merge_vars.outputs.ghcr_image_base }}"
-          DIGEST=$(printf '%s' "$META_JSON" | jq -r --arg t "$TARGET_SERVICE" '.target[$t].digest // empty')
+          DIGEST=$(printf '%s' "$META_JSON" | jq -r --arg t "$TARGET_SERVICE" '.[$t]["containerimage.digest"] // empty')
           if [ -z "$DIGEST" ]; then
             echo "::error::Digest not found in bake metadata"; exit 1
           fi
@@ -528,7 +528,7 @@ jobs:
           set -euo pipefail
           META_JSON='${{ steps.bake_tag.outputs.metadata }}'
           IMAGE_BASE="${{ steps.vars.outputs.ghcr_image_base }}"
-          DIGEST=$(printf '%s' "$META_JSON" | jq -r --arg t "$TARGET_SERVICE" '.target[$t].digest // empty')
+          DIGEST=$(printf '%s' "$META_JSON" | jq -r --arg t "$TARGET_SERVICE" '.[$t]["containerimage.digest"] // empty')
           if [ -z "$DIGEST" ]; then
             echo "::error::Digest not found in bake metadata"; exit 1
           fi
