@@ -122,7 +122,8 @@ jobs:
           builder: ${{ steps.buildx.outputs.name }}
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
-            ${{ env.TARGET_SERVICE }}.tags=["${{ steps.vars.outputs.ghcr_image_base }}/pr/${{ steps.vars.outputs.pr }}:${{ steps.vars.outputs.full_sha }}","${{ steps.vars.outputs.ghcr_image_base }}/pr/${{ steps.vars.outputs.pr }}:${{ steps.vars.outputs.short_sha }}"]
+            ${{ env.TARGET_SERVICE }}.tags=${{ steps.vars.outputs.ghcr_image_base }}/pr/${{ steps.vars.outputs.pr }}:${{ steps.vars.outputs.full_sha }}
+            ${{ env.TARGET_SERVICE }}.tags=${{ steps.vars.outputs.ghcr_image_base }}/pr/${{ steps.vars.outputs.pr }}:${{ steps.vars.outputs.short_sha }}
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
 
@@ -337,7 +338,7 @@ jobs:
           builder: ${{ steps.buildx.outputs.name }}
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
-            ${{ env.TARGET_SERVICE }}.tags=["${{ steps.merge_vars.outputs.ghcr_image_base }}:${{ steps.merge_vars.outputs.branch }}-${{ steps.merge_vars.outputs.short_sha }}"]
+            ${{ env.TARGET_SERVICE }}.tags=${{ steps.merge_vars.outputs.ghcr_image_base }}:${{ steps.merge_vars.outputs.branch }}-${{ steps.merge_vars.outputs.short_sha }}
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
 
@@ -511,7 +512,8 @@ jobs:
           builder: ${{ steps.buildx.outputs.name }}
           set: |
             ${{ env.TARGET_SERVICE }}.platform=${{ env.PLATFORMS }}
-            ${{ env.TARGET_SERVICE }}.tags=["${{ steps.vars.outputs.ghcr_image_base }}:${{ steps.vars.outputs.tag }}","${{ steps.vars.outputs.ghcr_image_base }}:${{ steps.vars.outputs.tag }}-${{ steps.vars.outputs.short_sha }}"]
+            ${{ env.TARGET_SERVICE }}.tags=${{ steps.vars.outputs.ghcr_image_base }}:${{ steps.vars.outputs.tag }}
+            ${{ env.TARGET_SERVICE }}.tags=${{ steps.vars.outputs.ghcr_image_base }}:${{ steps.vars.outputs.tag }}-${{ steps.vars.outputs.short_sha }}
             ${{ env.TARGET_SERVICE }}.cache-from=type=gha,scope=${{ env.TARGET_SERVICE }}
             ${{ env.TARGET_SERVICE }}.cache-to=type=gha,mode=max,scope=${{ env.TARGET_SERVICE }}
 
