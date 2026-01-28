@@ -45,10 +45,15 @@ func (p *Pin) Apply(ctx context.Context, input string) (string, bool, error) {
 
 	changed := false
 	resultLines := make([]string, 0, len(lines))
+
+	var errs []error
 	for _, line := range lines {
 		modifiedLine, lineChanged, err := p.replaceLine(ctx, line)
 		if err != nil {
-			return "", false, err
+			// Collect errors but continue processing remaining actions/lines.
+			errs = append(errs, err)
+			resultLines = append(resultLines, line)
+			continue
 		}
 
 		if lineChanged {
@@ -61,6 +66,9 @@ func (p *Pin) Apply(ctx context.Context, input string) (string, bool, error) {
 	// Join lines back into a single string using strings.Join (more efficient than concatenation)
 	output := strings.Join(resultLines, "\n")
 
+	if len(errs) > 0 {
+		return output, changed, errors.Join(errs...)
+	}
 	return output, changed, nil
 }
 
