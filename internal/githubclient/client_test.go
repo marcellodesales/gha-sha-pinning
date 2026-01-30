@@ -10,7 +10,7 @@ func TestNormalizeAPIBaseURL(t *testing.T) {
 	t.Run("empty is allowed", func(t *testing.T) {
 		got, err := NormalizeAPIBaseURL("")
 		require.NoError(t, err)
-		require.Equal(t, "", got)
+		require.Empty(t, got)
 	})
 
 	t.Run("adds trailing slash", func(t *testing.T) {
