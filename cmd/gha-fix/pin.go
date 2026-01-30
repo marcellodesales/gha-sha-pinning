@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 
@@ -46,6 +47,26 @@ Global options:
 Note: GITHUB_TOKEN environment variable is required to fetch tags and commit SHAs from GitHub.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		ctx := context.Background()
+
+		if slog.Default().Enabled(ctx, slog.LevelDebug) {
+			ownersFlag, _ := cmd.Flags().GetStringSlice("ignore-owners")
+			reposFlag, _ := cmd.Flags().GetStringSlice("ignore-repos")
+			strictFlag, _ := cmd.Flags().GetBool("strict-pinning-202508")
+		
+			slog.Debug("cobra parsed flags (pin command)",
+				"ignore-owners(flag)", ownersFlag,
+				"ignore-repos(flag)", reposFlag,
+				"strict-pinning-202508(flag)", strictFlag,
+			)
+		
+			slog.Debug("viper effective values (pin command)",
+				"pin.ignore-owners(viper)", viper.GetStringSlice("pin.ignore-owners"),
+				"pin.ignore-repos(viper)", viper.GetStringSlice("pin.ignore-repos"),
+				"pin.strict-pinning-202508(viper)", viper.GetBool("pin.strict-pinning-202508"),
+				"ignore-dirs(viper)", viper.GetStringSlice("ignore-dirs"),
+				"pin.api-server(viper)", viper.GetString("pin.api-server"),
+			)
+		}
 
 		// Resolve API base
 		apiServer := viper.GetString("pin.api-server")
@@ -113,6 +134,33 @@ Note: GITHUB_TOKEN environment variable is required to fetch tags and commit SHA
 			StrictPinning202508: strictPinning202508,
 		})
 
+		// Add full logging of the config before starting the execution
+		if slog.Default().Enabled(ctx, slog.LevelDebug) {
+			settings := viper.AllSettings()
+	
+			// Best-effort redaction. (Covers the config keys used by this tool.)
+			if pin, ok := settings["pin"].(map[string]any); ok {
+				if _, exists := pin["github-token"]; exists {
+					pin["github-token"] = "***REDACTED***"
+				}
+				if _, exists := pin["ghes-github-token"]; exists {
+					pin["ghes-github-token"] = "***REDACTED***"
+				}
+			}
+			
+			// Also avoid leaking env-derived values that might appear elsewhere.
+			if _, exists := settings["github-token"]; exists {
+				settings["github-token"] = "***REDACTED***"
+			}
+			
+			b, err := json.MarshalIndent(settings, "", "  ")
+			if err != nil {
+				slog.Debug("failed to marshal viper settings", "error", err)
+			} else {
+				slog.Debug("viper all settings", "json", string(b))
+			}
+		}
+
 		result, err := pinCmd.Run(ctx, args)
 		if err != nil {
 			slog.Error("failed to pin actions", "error", err)
@@ -147,8 +195,13 @@ func init() {
 	cobra.CheckErr(viper.BindEnv("pin.ghes-github-token", "GHES_GITHUB_TOKEN"))
 
 	pinCmd.Flags().StringSlice("ignore-owners", []string{}, "Comma-separated list of owners to ignore")
+	cobra.CheckErr(viper.BindPFlag("pin.ignore-owners", pinCmd.Flags().Lookup("ignore-owners")))
+
 	pinCmd.Flags().StringSlice("ignore-repos", []string{}, "Comma-separated list of repos to ignore in format owner/repo")
+	cobra.CheckErr(viper.BindPFlag("pin.ignore-repos", pinCmd.Flags().Lookup("ignore-repos")))
+
 	pinCmd.Flags().Bool("strict-pinning-202508", false, "Enable strict SHA pinning for composite actions (GitHub's SHA pinning enforcement policy)")
+	cobra.CheckErr(viper.BindPFlag("pin.strict-pinning-202508", pinCmd.Flags().Lookup("strict-pinning-202508")))
 
 	// Full GitHub API base URL (GHES support)
 	pinCmd.Flags().String("api-server", "", "Full GitHub API base URL (e.g., https://github.enterprise.company.com/api/v3/)")
