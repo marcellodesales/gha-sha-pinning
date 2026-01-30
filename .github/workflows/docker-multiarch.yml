@@ -254,7 +254,8 @@ jobs:
             PATH="/users/${REPO_OWNER}/packages/container/${ENCODED}"
           fi
           echo "Deleting GHCR package: ${PKG_NAME}"
-          gh api -X DELETE "$PATH" -H "Accept: application/vnd.github+json" || echo "Nothing to delete or insufficient permissions."
+          #gh api -X DELETE "$PATH" -H "Accept: application/vnd.github+json" || echo "Nothing to delete or insufficient permissions."
+          curl -sSfL -X DELETE -H "Accept: application/vnd.github+json" -H "Authorization: Bearer ${GITHUB_TOKEN}" "${GITHUB_API_URL}${PATH}"
 
   publish-on-merge:
     timeout-minutes: 10
